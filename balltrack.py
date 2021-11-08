@@ -1,98 +1,104 @@
-"""
-BALLTRACK.PY
-
-OOP-implementation for ball-tracking camera,
-uses OpenCV for video capture.
-"""
 import cv2
+import time
 import numpy as np
-import imutils
-import matplotlib.pyplot as plt
-from general import timer, BOARD_WIDTH, BOARD_LENGTH
+import datetime as dt
+from imutils import resize
+from general import Board, timer, time_interval
 
 
 class BallTracker(object):
-    def __init__(self, cam_number: int = 0):
+    def __init__(self, file_name: str):
         """
         Camera object initialization.
-
-        Args:
-            cam_number (int): Webcam number
         """
-        self.video = cv2.VideoCapture(cam_number, cv2.CAP_DSHOW)
+        self.video = None
+        self.file = file_name
         self.is_running = False
-        self.color = (10, 255, 10)
-        sensitivity = 25
-        self.lower = np.array([0, 0, 255 - sensitivity])
-        self.upper = np.array([255, sensitivity, 255])
-        self.ball_points = []
+        self.board = Board()
         self.output = None
+
+        # Video properties
+        self.font = cv2.FONT_HERSHEY_SIMPLEX
+        self.color = (10, 255, 10)
+        self.lower = np.array([52, 35, 0])
+        self.upper = np.array([255, 255, 255])
+        self.ball = []
+        self.ball_detected = False
         print("Ball tracker created!")
 
-    def track_ball(self):
-        self.is_running = True
+    @timer
+    def track(self):
+        self.video = cv2.VideoCapture(self.file)
+        print("Beginning trial scan.")
+        start_time = time.time()
+        center = None
+        radius = 0
+        pos = {'x': 0, 'y': 0}
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
-        while self.is_running:
-            _, frame = self.video.read()
+        while self.video.isOpened():
+            ret, frame = self.video.read()
 
-            if frame is None:
+            if not ret:
                 break
 
-            img = cv2.GaussianBlur(frame, (11, 11), 0)
+            # Setting up frame and region-of-interest
             width, height, _ = frame.shape
+            roi = frame[70:width - 50, 350:height - 200]
+            roi = resize(roi, height=540)
+            r_height, r_width, _ = roi.shape
+            hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+            lower_hue = np.array([52, 35, 0])
+            upper_hue = np.array([255, 255, 255])
+            mask = cv2.inRange(hsv, lower_hue, upper_hue)
+            (contours, _) = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-            mask = cv2.inRange(img, np.array([200, 170, 150]), np.array([220, 210, 200]))
-            cnts_set = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            cnts = imutils.grab_contours(cnts_set)
+            if len(contours) > 0:
+                c = max(contours, key=cv2.contourArea)
+                ((x, y), radius) = cv2.minEnclosingCircle(c)
+                M = cv2.moments(c)
 
-            if len(cnts) > 0:
                 try:
-                    c = max(cnts, key=cv2.contourArea)
-                    ((x, y), radius) = cv2.minEnclosingCircle(c)
-                    mts = cv2.moments(c)
-                    center = (int(mts["m10"] / mts["m00"]), int(mts["m01"] / mts["m00"]))
+                    if radius > 10:
+                        self.ball_detected = True
+                        center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+                        pos['x'], pos['y'] = round(x), round(y)
+                        cv2.circle(roi, center, 10, (30, 200, 255), -1)
+                        if len(self.ball) > 30:
+                            del self.ball[0]
 
-                except ZeroDivisionError as zde:
-                    print(f'Invalid division: {zde}, needs valid moment value.')
+                        self.ball.append(center)
 
-                # To see the centroid clearly
-                if 5 < radius:
-                    cv2.circle(frame, (int(x), int(y)), int(radius), (0, 255, 255), 5)
-                    cv2.imwrite("circled_frame.png", cv2.resize(frame, (int(height / 2), int(width / 2))))
-                    cv2.circle(frame, center, 5, (0, 255, 0), -1)
-                    print(round(radius, 3), center)
-                    self.ball_points.append(center)
+                    else:
+                        self.ball_detected = False
 
-            cv2.imshow("Frame", frame)
+                except Exception as e:
+                    print(f'Error during trace: {e}')
+
+                if len(self.ball) > 2:
+                    for i in range(1, len(self.ball)):
+                        dx = abs(self.ball[i-1][0] - self.ball[i][0])
+                        dy = abs(self.ball[i - 1][1] - self.ball[i][1])
+                        if dx < 100 and dy < 50:
+                            cv2.line(roi, self.ball[i - 1], self.ball[i], (10, 10, 255), 5)
+
+            time_stamp = dt.datetime.now().strftime("%I:%M:%S %p")
+            frame_text = [
+                time_stamp,
+                f'Runtime: {time_interval(start_time)}',
+                f'Radius: {round(radius, 2)}',
+                f'Ball in frame: {"YES" if self.ball_detected else "NO"}',
+                f'Last position: ({pos["x"]},{pos["y"]})'
+            ]
+            for i, label in enumerate(frame_text):
+                cv2.putText(roi, str(label), (10, 20 + 20 * i), self.font, 0.5, (10, 255, 100), 1)
+
+            cv2.imshow("Ball Tracking", roi)
+
             key = cv2.waitKey(10)
             if key == 27:
                 print("Ending tracking session.")
-                self.is_running = False
                 break
 
         self.video.release()
         cv2.destroyAllWindows()
-
-    def plot_data(self):
-        x = [point[0] for point in self.ball_points]
-        y = [point[1] for point in self.ball_points]
-        plt.scatter(x, y)
-        plt.xlim(0, max(x))
-        plt.ylim(0, max(y))
-        plt.xlabel("X-coordinates")
-        plt.ylabel("Y-coordinates")
-        plt.title('Ball motion')
-        plt.show()
-
-    @timer
-    def full_run(self):
-        print("Now running tracker cam.")
-        try:
-            self.track_ball()
-            print("-" * 25)
-            print(f'Data points collected: {len(self.ball_points)}')
-            self.plot_data()
-            print("Displaying gathered data.")
-
-        except Exception as e:
-            print(f'Error occurred during main run: {e}')
