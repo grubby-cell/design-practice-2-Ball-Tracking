@@ -1,36 +1,36 @@
+"""
+BALLTRACK.PY
+
+OOP-implementation for ball-tracking camera,
+uses OpenCV for video capture.
+"""
 import cv2
 import numpy as np
 import imutils
 import matplotlib.pyplot as plt
-import datetime as dt
+from general import timer, BOARD_WIDTH, BOARD_LENGTH
 
 
 class BallTracker(object):
-    def __init__(self, file_link: str):
+    def __init__(self, cam_number: int = 0):
         """
         Camera object initialization.
 
         Args:
-            file_link (str): Link to video file
-
-        Properties:
-            video (cv2.VideoCapture): Video capture object
-            is_running (bool): True if the camera is running
-            color (tuple): RGB color of the rectangle
+            cam_number (int): Webcam number
         """
-        self.file = file_link
-        self.video = cv2.VideoCapture(file_link, cv2.CAP_DSHOW)
+        self.video = cv2.VideoCapture(cam_number, cv2.CAP_DSHOW)
         self.is_running = False
         self.color = (10, 255, 10)
-        self.sensitivity = 25
-        self.lower = np.array([0, 0, 255 - self.sensitivity])
-        self.upper = np.array([255, self.sensitivity, 255])
+        sensitivity = 25
+        self.lower = np.array([0, 0, 255 - sensitivity])
+        self.upper = np.array([255, sensitivity, 255])
         self.ball_points = []
+        self.output = None
         print("Ball tracker created!")
 
     def track_ball(self):
         self.is_running = True
-        print(f'Opening file: {self.file}')
 
         while self.is_running:
             _, frame = self.video.read()
@@ -39,18 +39,21 @@ class BallTracker(object):
                 break
 
             img = cv2.GaussianBlur(frame, (11, 11), 0)
-            width, height = frame.shape[:2]
+            width, height, _ = frame.shape
 
             mask = cv2.inRange(img, np.array([200, 170, 150]), np.array([220, 210, 200]))
             cnts_set = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             cnts = imutils.grab_contours(cnts_set)
-            center = None
 
             if len(cnts) > 0:
-                c = max(cnts, key=cv2.contourArea)
-                ((x, y), radius) = cv2.minEnclosingCircle(c)
-                mts = cv2.moments(c)
-                center = (int(mts["m10"] / mts["m00"]), int(mts["m01"] / mts["m00"]))
+                try:
+                    c = max(cnts, key=cv2.contourArea)
+                    ((x, y), radius) = cv2.minEnclosingCircle(c)
+                    mts = cv2.moments(c)
+                    center = (int(mts["m10"] / mts["m00"]), int(mts["m01"] / mts["m00"]))
+
+                except ZeroDivisionError as zde:
+                    print(f'Invalid division: {zde}, needs valid moment value.')
 
                 # To see the centroid clearly
                 if 5 < radius:
@@ -60,7 +63,7 @@ class BallTracker(object):
                     print(round(radius, 3), center)
                     self.ball_points.append(center)
 
-            cv2.imshow("Frame", mask)
+            cv2.imshow("Frame", frame)
             key = cv2.waitKey(10)
             if key == 27:
                 print("Ending tracking session.")
@@ -81,5 +84,15 @@ class BallTracker(object):
         plt.title('Ball motion')
         plt.show()
 
-        print("-" * 25)
-        print(f'Data points collected: {len(self.ball_points)}')
+    @timer
+    def full_run(self):
+        print("Now running tracker cam.")
+        try:
+            self.track_ball()
+            print("-" * 25)
+            print(f'Data points collected: {len(self.ball_points)}')
+            self.plot_data()
+            print("Displaying gathered data.")
+
+        except Exception as e:
+            print(f'Error occurred during main run: {e}')
