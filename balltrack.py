@@ -1,8 +1,17 @@
+"""
+BALLTRACK.PY
+
+Main ball-tracking class and tools for the project. Uses
+OpenCV for video capture and processing, then NumPy and
+custom module for post-processing and computations. Data
+is plotted visually using Matplotlib.
+"""
 import cv2
 import time
 import numpy as np
 import datetime as dt
 from imutils import resize
+from matplotlib import pyplot as plt
 from general import Board, timer, time_interval
 
 
@@ -11,6 +20,7 @@ class BallTracker(object):
         """
         Camera object initialization.
         """
+        # Basic run properties
         self.video = None
         self.file = file_name
         self.is_running = False
@@ -25,9 +35,13 @@ class BallTracker(object):
         self.ball = []
         self.ball_detected = False
         print("Ball tracker created!")
+        print(f'Board dimensions: {self.board.WIDTH}mm x {self.board.LENGTH}mm')
 
     @timer
     def track(self):
+        """
+        Track ball and plot position markers on frame.
+        """
         self.video = cv2.VideoCapture(self.file)
         print("Beginning trial scan.")
         start_time = time.time()
@@ -37,8 +51,8 @@ class BallTracker(object):
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
         while self.video.isOpened():
+            # Grab frame from video
             ret, frame = self.video.read()
-
             if not ret:
                 break
 
@@ -56,17 +70,17 @@ class BallTracker(object):
             if len(contours) > 0:
                 c = max(contours, key=cv2.contourArea)
                 ((x, y), radius) = cv2.minEnclosingCircle(c)
-                M = cv2.moments(c)
+                mts = cv2.moments(c)
 
+                # Highlight ball shape and collect position data
                 try:
                     if radius > 10:
                         self.ball_detected = True
-                        center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+                        center = (int(mts["m10"]/mts["m00"]), int(mts["m01"]/mts["m00"]))
                         pos['x'], pos['y'] = round(x), round(y)
-                        cv2.circle(roi, center, 10, (30, 200, 255), -1)
-                        if len(self.ball) > 30:
+                        cv2.circle(roi, center, 15, (30, 200, 255), 3)
+                        if len(self.ball) > 50:
                             del self.ball[0]
-
                         self.ball.append(center)
 
                     else:
@@ -75,13 +89,15 @@ class BallTracker(object):
                 except Exception as e:
                     print(f'Error during trace: {e}')
 
+                # Put tracer line to show ball path
                 if len(self.ball) > 2:
                     for i in range(1, len(self.ball)):
                         dx = abs(self.ball[i-1][0] - self.ball[i][0])
                         dy = abs(self.ball[i - 1][1] - self.ball[i][1])
                         if dx < 100 and dy < 50:
-                            cv2.line(roi, self.ball[i - 1], self.ball[i], (10, 10, 255), 5)
+                            cv2.line(roi, self.ball[i-1], self.ball[i], (10, 10, 255), 5)
 
+            # Put window text and frame details
             time_stamp = dt.datetime.now().strftime("%I:%M:%S %p")
             frame_text = [
                 time_stamp,
@@ -91,10 +107,12 @@ class BallTracker(object):
                 f'Last position: ({pos["x"]},{pos["y"]})'
             ]
             for i, label in enumerate(frame_text):
-                cv2.putText(roi, str(label), (10, 20 + 20 * i), self.font, 0.5, (10, 255, 100), 1)
+                cv2.putText(roi, str(label), (10, 20 + 20 * i),
+                            self.font, 0.5, (10, 255, 100), 1)
 
             cv2.imshow("Ball Tracking", roi)
 
+            # Close windows with 'Esc' key
             key = cv2.waitKey(10)
             if key == 27:
                 print("Ending tracking session.")
@@ -102,3 +120,18 @@ class BallTracker(object):
 
         self.video.release()
         cv2.destroyAllWindows()
+
+    def plot_data(self):
+        """
+        Plot data acquired from tracking session.
+        """
+        # Separate data into X and Y parameters
+        x_data = np.array([p[0] for p in self.ball])
+        y_data = np.array([p[1] for p in self.ball])
+
+        # Plot data
+        plt.plot(x_data, y_data, '-ro')
+        plt.title(f'Ball data: {len(self.ball)} points')
+        plt.xlabel("X-coordinate")
+        plt.ylabel("Y-coordinate")
+        plt.show()
