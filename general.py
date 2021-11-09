@@ -1,24 +1,36 @@
+"""
+GENERAL.PY
+
+Side file for hosting the general-purpose functions
+and decorators. The Board class holds the data for
+the physical properties of the real board.
+"""
 import time
 import math
-
+from typing import List
 
 class Board(object):
+    """
+    Store constants for project board.
+    """
     WIDTH = 78
     LENGTH = 117
+    r_width = 0
+    r_length = 0
 
 
 def timer(func):
     def timer_wrapper(*args, **kwargs):
         start_time = time.time()
         ret_val = func(*args, **kwargs)
-        runtime = time.time() - start_time
-        print(f'\n[Elapsed time: {round(runtime, 2)}s]')
+        runtime = time_interval(start_time)
+        print(f'\n[Elapsed time: {runtime}]')
         return ret_val
 
     return timer_wrapper
 
 
-def time_interval(start_period: float):
+def time_interval(start_period: float) -> str:
     """
     Calculates time interval, given a starting time.
 
@@ -58,10 +70,10 @@ def slope(pos1: tuple, pos2: tuple) -> float:
     return round(num / den, 2)
 
 
-def differentiate(data_set: list) -> list:
+def differentiate(data_set: List[tuple]) -> List[float]:
     diff_data = []
     for i in range(1, len(data_set) + 1):
-        v_r = slope(data_set[i], data_set[i - 1])
+        v_r = slope(data_set[i], data_set[i-1])
         diff_data.append(v_r)
 
     return diff_data

@@ -29,13 +29,16 @@ class BallTracker(object):
 
         # Video properties
         self.font = cv2.FONT_HERSHEY_SIMPLEX
-        self.color = (10, 255, 10)
         self.lower = np.array([52, 35, 0])
         self.upper = np.array([255, 255, 255])
         self.ball = []
+        self.radius_log = []
         self.ball_detected = False
+        self.frame_dim = {'length': None, 'width': None}
+        self.roi_dim = {'length': None, 'width': None}
         print("Ball tracker created!")
         print(f'Board dimensions: {self.board.WIDTH}mm x {self.board.LENGTH}mm')
+        print("-"*25)
 
     @timer
     def track(self):
@@ -48,7 +51,6 @@ class BallTracker(object):
         center = None
         radius = 0
         pos = {'x': 0, 'y': 0}
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
         while self.video.isOpened():
             # Grab frame from video
@@ -58,9 +60,21 @@ class BallTracker(object):
 
             # Setting up frame and region-of-interest
             width, height, _ = frame.shape
-            roi = frame[70:width - 50, 350:height - 200]
+            self.roi_dim = {
+                'length': (350, height-200),
+                'width': (70, width-50)
+            }
+            self.frame_dim = {
+                'length': (0, height),
+                'width': (0, width)
+            }
+            roi = frame[
+                  self.roi_dim['width'][0]:self.roi_dim['width'][1],
+                  self.roi_dim['length'][0]:self.roi_dim['length'][1]
+            ]
             roi = resize(roi, height=540)
             r_height, r_width, _ = roi.shape
+            self.board.r_width, self.board.r_length = r_height, r_width
             hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
             lower_hue = np.array([52, 35, 0])
             upper_hue = np.array([255, 255, 255])
@@ -74,7 +88,7 @@ class BallTracker(object):
 
                 # Highlight ball shape and collect position data
                 try:
-                    if radius > 10:
+                    if 10 < radius < 16:
                         self.ball_detected = True
                         center = (int(mts["m10"]/mts["m00"]), int(mts["m01"]/mts["m00"]))
                         pos['x'], pos['y'] = round(x), round(y)
@@ -82,20 +96,21 @@ class BallTracker(object):
                         if len(self.ball) > 50:
                             del self.ball[0]
                         self.ball.append(center)
+                        self.radius_log.append(round(radius, 2))
 
                     else:
                         self.ball_detected = False
 
+                    # Put tracer line to show ball path
+                    if len(self.ball) > 2:
+                        for i in range(1, len(self.ball)):
+                            dx = abs(self.ball[i - 1][0] - self.ball[i][0])
+                            dy = abs(self.ball[i - 1][1] - self.ball[i][1])
+                            if dx < 100 and dy < 50:
+                                cv2.line(roi, self.ball[i - 1], self.ball[i], (10, 10, 255), 5)
+
                 except Exception as e:
                     print(f'Error during trace: {e}')
-
-                # Put tracer line to show ball path
-                if len(self.ball) > 2:
-                    for i in range(1, len(self.ball)):
-                        dx = abs(self.ball[i-1][0] - self.ball[i][0])
-                        dy = abs(self.ball[i - 1][1] - self.ball[i][1])
-                        if dx < 100 and dy < 50:
-                            cv2.line(roi, self.ball[i-1], self.ball[i], (10, 10, 255), 5)
 
             # Put window text and frame details
             time_stamp = dt.datetime.now().strftime("%I:%M:%S %p")
@@ -120,18 +135,33 @@ class BallTracker(object):
 
         self.video.release()
         cv2.destroyAllWindows()
+        self.get_statistics()
+
+    def get_statistics(self):
+        """
+        Summarize data gathered during tracking run.
+        """
+        avg = lambda d: round(sum(d) / len(d), 3)
+        print("\n***** TRACK DATA *****")
+        print(f'Radius range: [{min(self.radius_log)}, {max(self.radius_log)}]')
+        print(f'Average radius: {avg(self.radius_log)}')
+        print(f'ROI size: W = {self.roi_dim["width"]}, L = {self.roi_dim["length"]}')
+        self.plot_data()
 
     def plot_data(self):
         """
         Plot data acquired from tracking session.
         """
-        # Separate data into X and Y parameters
+        # Separate coordinates data into X and Y parameters
         x_data = np.array([p[0] for p in self.ball])
-        y_data = np.array([p[1] for p in self.ball])
+        y_data = np.array([self.roi_dim['width'][1]-p[1] for p in self.ball])
 
-        # Plot data
-        plt.plot(x_data, y_data, '-ro')
-        plt.title(f'Ball data: {len(self.ball)} points')
+        # Generate plot
+        plt.plot(x_data, y_data, linestyle='dotted', color='r', linewidth='2.0')
+        plt.title("Ball point tracking")
+        plt.xlim(*self.roi_dim['width'])
+        plt.ylim(*self.roi_dim['length'])
         plt.xlabel("X-coordinate")
         plt.ylabel("Y-coordinate")
+        plt.grid()
         plt.show()
