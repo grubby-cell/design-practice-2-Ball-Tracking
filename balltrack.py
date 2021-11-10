@@ -8,6 +8,7 @@ is plotted visually using Matplotlib.
 """
 import cv2
 import time
+import csv
 import numpy as np
 import datetime as dt
 from imutils import resize
@@ -40,13 +41,21 @@ class BallTracker(object):
         print(f'Board dimensions: {self.board.WIDTH}mm x {self.board.LENGTH}mm')
         print("-"*25)
 
+    def __repr__(self):
+        return f'<BallTracker file={self.file}, bounds=[{self.lower}, {self.upper}]>'
+
+    def __len__(self):
+        if self.video is not None:
+            return int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
+        return 0
+
     @timer
     def track(self):
         """
         Track ball and plot position markers on frame.
         """
         self.video = cv2.VideoCapture(self.file)
-        print("Beginning trial scan.")
+        print("Beginning tracking sequence.")
         start_time = time.time()
         center = None
         radius = 0
@@ -75,12 +84,15 @@ class BallTracker(object):
             roi = resize(roi, height=540)
             r_height, r_width, _ = roi.shape
             self.board.r_width, self.board.r_length = r_height, r_width
+
+            # Isolate ball shape via HSV bounds
             hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
             lower_hue = np.array([52, 35, 0])
             upper_hue = np.array([255, 255, 255])
             mask = cv2.inRange(hsv, lower_hue, upper_hue)
             (contours, _) = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
+            # When ball is detected
             if len(contours) > 0:
                 c = max(contours, key=cv2.contourArea)
                 ((x, y), radius) = cv2.minEnclosingCircle(c)
@@ -135,7 +147,10 @@ class BallTracker(object):
 
         self.video.release()
         cv2.destroyAllWindows()
+
+        # Postprocessing functions for data analysis
         self.get_statistics()
+        self.export_data()
 
     def get_statistics(self):
         """
@@ -165,3 +180,21 @@ class BallTracker(object):
         plt.ylabel("Y-coordinate")
         plt.grid()
         plt.show()
+
+    def export_data(self):
+        day = dt.datetime.now().strftime("%d-%B-%Y")
+        with open(f'data_({day}).csv', 'w', encoding='UTF8') as f:
+            header = ["Frame", "X", "Y"]
+            writer = csv.writer(f)
+            writer.writerow(header)
+
+            # Go through list of stored points, write to file
+            for idx, pair in enumerate(self.ball):
+                data_input = [
+                    str(idx + 1),
+                    str(pair[0]),
+                    str(self.roi_dim['width'][1] - pair[1])
+                ]
+                writer.writerow(data_input)
+
+        print("Data compiled and exported to CSV file.")
