@@ -10,14 +10,13 @@ import cv2
 import time
 import csv
 import numpy as np
-import sympy as sym
 import datetime as dt
 from imutils import resize
-from scipy.optimize import curve_fit
 from matplotlib import pyplot as plt
 from general import Board, timer, time_interval
 
 
+# noinspection PyUnresolvedReferences
 class BallTracker(object):
     def __init__(self, file_name: str):
         """
@@ -37,8 +36,8 @@ class BallTracker(object):
         self.ball = []
         self.radius_log = []
         self.ball_detected = False
-        self.frame_dim = {'length': None, 'width': None}
-        self.roi_dim = {'length': None, 'width': None}
+        self.frame_dim = {'length': 0, 'width': 0}
+        self.roi_dim = {'length': 0, 'width': 0}
         print("Ball tracker created!")
         print(f'Board dimensions: {self.board.WIDTH}mm x {self.board.LENGTH}mm')
         print("-"*25)
@@ -51,6 +50,16 @@ class BallTracker(object):
             return int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
         return 0
 
+    def __getitem__(self, item: int):
+        if type(item) != int:
+            type_name = lambda v: str(type(v)).split("'")[1].lower()
+            raise ValueError(f'{type_name(item)} was given but int was required.')
+        return self.ball[item]
+
+    def __iter__(self):
+        for each in self.ball:
+            yield each
+
     @timer
     def track(self):
         """
@@ -60,7 +69,6 @@ class BallTracker(object):
         self.video = cv2.VideoCapture(self.file)
         print("Beginning tracking sequence.")
         start_time = time.time()
-        center = None
         radius = 0
         pos = {'x': 0, 'y': 0}
 
@@ -142,7 +150,7 @@ class BallTracker(object):
                 cv2.putText(roi, str(label), (10, 20 + 20 * i),
                             self.font, 0.5, (10, 255, 100), 1)
 
-            cv2.imshow("Original Clip", frame)
+            # cv2.imshow("Original Clip", frame)
             cv2.imshow("Ball Tracking", roi)
 
             # Close windows with 'Esc' key
