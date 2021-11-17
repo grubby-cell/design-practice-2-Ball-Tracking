@@ -6,8 +6,7 @@ and decorators. The Board class holds the data for
 the physical properties of the real board.
 """
 import time
-import math
-from typing import List
+
 
 class Board(object):
     """
@@ -46,7 +45,8 @@ def time_interval(start_period: float) -> str:
         return d_hours, d_minutes, d_seconds
 
     try:
-        hours, minutes, seconds = convert_time_diff(time.time() - start_period)
+        now = time.time()
+        hours, minutes, seconds = convert_time_diff(now - start_period)
         time_elapsed = []
 
         if hours:
@@ -61,19 +61,3 @@ def time_interval(start_period: float) -> str:
     except Exception as e:
         print(f'Time interval computation error: {e}')
         return "ERROR"
-
-
-def slope(pos1: tuple, pos2: tuple) -> float:
-    num = pos2[1] - pos1[1]
-    den = pos2[0] - pos1[0]
-
-    return round(num / den, 2)
-
-
-def differentiate(data_set: List[tuple]) -> List[float]:
-    diff_data = []
-    for i in range(1, len(data_set) + 1):
-        v_r = slope(data_set[i], data_set[i-1])
-        diff_data.append(v_r)
-
-    return diff_data
