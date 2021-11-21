@@ -8,16 +8,6 @@ the physical properties of the real board.
 import time
 
 
-class Board(object):
-    """
-    Store constants for project board.
-    """
-    WIDTH = 78
-    LENGTH = 117
-    r_width = 0
-    r_length = 0
-
-
 def timer(func):
     def timer_wrapper(*args, **kwargs):
         start_time = time.time()

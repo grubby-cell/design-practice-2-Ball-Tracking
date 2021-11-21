@@ -9,14 +9,20 @@ is plotted visually using Matplotlib.
 import cv2
 import time
 import csv
+import logging as lg
 import numpy as np
 import datetime as dt
+import traceback as tb
+from os import path
 from imutils import resize
+from time import perf_counter
 from matplotlib import pyplot as plt
-from general import Board, timer, time_interval
+from mpl_toolkits import mplot3d
+from general import timer, time_interval
+from datamodels import Board, Point
+from calculation import polynomial_data
 
 
-# noinspection PyUnresolvedReferences
 class BallTracker(object):
     def __init__(self, file_name: str):
         """
@@ -38,7 +44,19 @@ class BallTracker(object):
         self.ball_detected = False
         self.frame_dim = {'length': 0, 'width': 0}
         self.roi_dim = {'length': 0, 'width': 0}
-        print("Ball tracker created!")
+
+        # Configure logging
+        log_fmt = "[%(levelname)s] %(asctime)s | %(message)s"
+        date_fmt = "%I:%M:%S %p"
+        lg.basicConfig(
+            level=lg.DEBUG,
+            format=log_fmt,
+            datefmt=date_fmt
+        )
+        lg.getLogger('matplotlib.font_manager').setLevel(lg.WARNING)
+
+        # Notification of completion
+        lg.info("Ball tracker created.")
         print(f'Board dimensions: {self.board.WIDTH}mm x {self.board.LENGTH}mm')
         print("-"*25)
 
@@ -57,8 +75,22 @@ class BallTracker(object):
         return self.ball[item]
 
     def __iter__(self):
-        for each in self.ball:
-            yield each
+        for item in self.ball:
+            yield item
+
+    def trace_path(self, frame):
+        """
+        Traces path line of ball in video.
+        """
+        for i in range(1, len(self.ball)):
+            prev = self.ball[i-1]
+            curr = self.ball[i]
+            dx = abs(prev.x - curr.x)
+            dy = abs(prev.y - curr.y)
+            if dx < 100 and dy < 50:
+                p_prev = (prev.x, prev.y)
+                p_curr = (curr.x, curr.y)
+                cv2.line(frame, p_prev, p_curr, (10, 10, 255), 5)
 
     @timer
     def track(self):
@@ -71,6 +103,7 @@ class BallTracker(object):
         start_time = time.time()
         radius = 0
         pos = {'x': 0, 'y': 0}
+        baseline = perf_counter()
 
         while self.video.isOpened():
             # Grab frame from video
@@ -112,29 +145,30 @@ class BallTracker(object):
 
                 # Highlight ball shape and collect position data
                 try:
-                    if 10 < radius < 16:
+                    if 10 < radius < 16 and x < 700:
                         self.ball_detected = True
+                        stamp = time.perf_counter()
                         center = (int(mts["m10"]/mts["m00"]), int(mts["m01"]/mts["m00"]))
                         pos['x'], pos['y'] = round(x), round(y)
-                        cv2.circle(roi, center, 15, (30, 200, 255), 3)
-                        if len(self.ball) > 50:
-                            del self.ball[0]
-                        self.ball.append(center)
+                        frame_data = Point(
+                            x=center[0],
+                            y=center[1],
+                            time=stamp
+                        )
+                        self.ball.append(frame_data)
                         self.radius_log.append(round(radius, 2))
+                        cv2.circle(roi, center, 15, (30, 200, 255), 3)
 
                     else:
                         self.ball_detected = False
 
                     # Put tracer line to show ball path
                     if len(self.ball) > 2:
-                        for i in range(1, len(self.ball)):
-                            dx = abs(self.ball[i-1][0] - self.ball[i][0])
-                            dy = abs(self.ball[i-1][1] - self.ball[i][1])
-                            if dx < 100 and dy < 50:
-                                cv2.line(roi, self.ball[i-1], self.ball[i], (10, 10, 255), 5)
+                        self.trace_path(roi)
 
                 except Exception as e:
-                    print(f'Error during trace: {e}')
+                    lg.error(f'Error during trace: {e}')
+                    tb.print_exc()
 
             # Put window text and frame details
             cv2.putText(frame, "Video feed", (10, 30), self.font, 0.7, (10, 255, 100), 2)
@@ -161,6 +195,7 @@ class BallTracker(object):
 
         self.video.release()
         cv2.destroyAllWindows()
+        lg.info("Tracker session ended.")
 
         # Postprocessing functions for data analysis
         self.get_run_statistics()
@@ -174,24 +209,32 @@ class BallTracker(object):
         print("\n***** TRACK DATA *****")
         print(f'Radius range: [{min(self.radius_log)}, {max(self.radius_log)}]')
         print(f'Average radius: {avg(self.radius_log)}')
+        print(f'Total points: {len(self.ball)}')
         print(f'ROI area: W = {self.roi_dim["width"]}, L = {self.roi_dim["length"]}')
+        print("*" * 22)
+
         self.plot_data()
 
     def plot_data(self):
         """
-        Plot data acquired from tracking session.
+        Plot 2D data acquired from tracking session.
         """
         # Separate coordinates data into X and Y parameters
-        x_raw = [p[0] for p in self.ball]
-        y_raw = [self.roi_dim['width'][1]-p[1] for p in self.ball]
+        x_raw = [p.x for p in self.ball]
+        y_raw = [self.roi_dim['width'][1] - p.y for p in self.ball]
         x_data = np.array(x_raw, dtype=float)
         y_data = np.array(y_raw, dtype=float)
+        bestfit = polynomial_data(x_raw, y_raw, 3)
+        print("-" * 25)
+        print(f"y(x) = {bestfit['equation']}")
+        print(f"Polynomial R-squared: {bestfit['relation']}")
 
         # Generate plot
-        plt.plot(x_data, y_data, linestyle='dotted', color='r', linewidth='2.0')
+        plt.scatter(x_data, y_data, color="firebrick")
+        plt.plot(bestfit['line'], bestfit['polynomial'], color="gold")
         plt.title("Ball point tracking")
-        plt.xlim(*self.roi_dim['width'])
-        plt.ylim(*self.roi_dim['length'])
+        plt.xlim(0, np.max(x_data)+10)
+        plt.ylim(np.min(y_data)-10, np.max(y_data)+10)
         plt.xlabel("X-coordinate")
         plt.ylabel("Y-coordinate")
         plt.grid()
@@ -201,19 +244,25 @@ class BallTracker(object):
         """
         Export gathered data as CSV file.
         """
-        day = dt.datetime.now().strftime("%d-%B-%Y")
-        with open(f'data_({day}).csv', 'w', encoding='UTF8') as f:
-            header = ["Frame", "X", "Y"]
-            writer = csv.writer(f)
-            writer.writerow(header)
+        plain_file_name = self.file.split(".")[0]
+        csv_file = f'data_({plain_file_name}).csv'
 
-            # Go through list of stored points, write to file
-            for idx, pair in enumerate(self.ball):
-                data_input = [
-                    str(idx + 1),
-                    str(pair[0]),
-                    str(self.roi_dim['width'][1] - pair[1])
-                ]
-                writer.writerow(data_input)
+        if not path.exists(csv_file):
+            with open(csv_file, 'w', encoding='UTF8') as f:
+                header = ["Time", "X", "Y"]
+                writer = csv.writer(f)
+                writer.writerow(header)
 
-        print("Data compiled and exported to CSV file.")
+                # Go through list of stored points, write to file
+                for point in self.ball:
+                    data_input = [
+                        str(point.time),
+                        str(point.x),
+                        str(point.y)
+                    ]
+                    writer.writerow(data_input)
+
+            print("Data compiled and exported to CSV file.")
+
+        else:
+            print(f'Data for \"{self.file}\" has already been exported to CSV file.')

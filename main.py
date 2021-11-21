@@ -10,7 +10,11 @@ from testfunctions import trial_scan
 from videoscan import color_scan
 
 
-if __name__ == "__main__":
+def main():
     ballcam = BallTracker("ramp_trial.mp4")
     ballcam.track()
-    # scan_video("ramp_trial.mp4")
+    # color_scan("ramp_trial.mp4")
+
+
+if __name__ == "__main__":
+    main()
