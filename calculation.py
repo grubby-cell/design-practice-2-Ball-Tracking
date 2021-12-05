@@ -7,6 +7,7 @@ mathematical analysis of data.
 import numpy as np
 from typing import List
 from sklearn.metrics import r2_score
+from datamodels import Vector
 
 
 def percent_diff(expected, actual) -> float:
@@ -25,7 +26,7 @@ def percent_diff(expected, actual) -> float:
     return sign * round(value, 2)
 
 
-def differentiate(data_set) -> List[tuple]:
+def differentiate(data_set) -> List[Vector]:
     """
     Takes the captured data set and calculates the velocity
     using numerical differentiation.
@@ -33,27 +34,29 @@ def differentiate(data_set) -> List[tuple]:
     :param data_set: List of values from video capture
     :return: diff_data: Velocities along X and Y axes
     """
-    diff_data = []
+    initial_velocity = Vector(x=0, y=0)
+    diff_data = [initial_velocity]
     for i in range(1, len(data_set)):
         prev, curr = data_set[i], data_set[i-1]
         x_p, y_p = prev.x, prev.y
         x_c, y_c = curr.x, curr.y
         t_c, t_p = curr.time, prev.time
-        dx = (x_c - x_p) / (t_c - t_p)
-        dy = (y_c - y_p) / (t_c - t_p)
-        diff_data.append((dx, dy))
+        dx = round((x_c - x_p) / (t_c - t_p), 2)
+        dy = round((y_c - y_p) / (t_c - t_p), 2)
+        velocity = Vector(x=dx, y=dy)
+        diff_data.append(velocity)
 
     return diff_data
 
 
-def polynomial_data(x, y, deg=2) -> dict:
+def polynomial_data(x, y, deg: int = 2) -> dict:
     fit = np.polyfit(x, y, deg)
     polynomial = np.poly1d(fit)
     line = np.linspace(x[0], x[-1], max(y))
     poly_rel = round(r2_score(y, polynomial(x)), 4)
     coefficients = list(map(lambda c: float(c), fit))
     eq_comp = [
-        f'{"+" if coefficients[i] > 0 else "-"} {abs(coefficients[i]):,.2f}t^{deg - i}'
+        f'{"+" if coefficients[i] > 0 else "-"} {abs(coefficients[i]):.3f}x^{deg - i}'
         for i in range(deg)
     ]
     poly_eq_form = ' '.join(eq_comp)
@@ -64,4 +67,3 @@ def polynomial_data(x, y, deg=2) -> dict:
         'polynomial': polynomial(line),
         'equation': poly_eq_form
     }
-
