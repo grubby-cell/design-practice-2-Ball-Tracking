@@ -9,3 +9,8 @@ Ball tracking program for DP2 class. Used to trace ball across board using webca
 - Imutils
 - MatplotLib
 - PyTest
+- Pydantic
+- CSV
+- Tabulate
+- Datetime
+- Scikit-Learn
