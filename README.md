@@ -14,3 +14,6 @@ Ball tracking program for DP2 class. Used to trace ball across board using webca
 - Tabulate
 - Datetime
 - Scikit-Learn
+
+## How to run program
+Install the necessary requisite modules, then run "main.py" file.
