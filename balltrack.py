@@ -3,7 +3,7 @@ BALLTRACK.PY
 
 Main ball-tracking class and tools for the project. Uses
 OpenCV for video capture and processing, then NumPy and
-custom module for post-processing and computations. Data
+custom modules for post-processing and computations. Data
 is plotted visually using Matplotlib.
 """
 # Libraries and modules
@@ -21,7 +21,7 @@ from tabulate import tabulate
 from matplotlib import pyplot as plt
 # Local files
 from timing import timer, time_interval
-from datamodels import Board, Point, Region
+from datamodels import Board, Point, Region, Vector
 from calculation import differentiate, polynomial_data
 
 
@@ -43,7 +43,6 @@ class BallTracker(object):
         self.lower = np.array([52, 35, 0])
         self.upper = np.array([255, 255, 255])
         self.ball = []
-        self.velocities = []
         self.radius_log = []
         self.ball_detected = False
         self.frame_dim = None
@@ -85,6 +84,13 @@ class BallTracker(object):
             yield item
 
     def __convert_units(self, item, precision: int = 0):
+        """
+        Converts pixel units to centimeters.
+
+        :param item: Value in pixels
+        :param precision: Decimal places for result
+        :return: unit length in centimeters
+        """
         if precision:
             return round(self.cm_pixel_ratio * item, precision)
         return round(self.cm_pixel_ratio * item)
@@ -101,12 +107,24 @@ class BallTracker(object):
             if dx < 20 and dy < 20:
                 p_prev = (prev.x, self.roi_dim.width[1]-prev.y)
                 p_curr = (curr.x, self.roi_dim.width[1]-curr.y)
-                cv2.line(frame, p_prev, p_curr, (10, 10, 255), 2)
+                cv2.line(frame, p_prev, p_curr, (10, 10, 255), 3)
 
-    def __show_trajectory(self, frame, center):
-        res = self.__convert_units(vector.resultant(), 2)
-        angle = round(vector.angle(), 1)
-        cv2.arrowedLine(image, center, (200, 50), (157, 113, 30), 3, 8, 0, 0.1)
+    @staticmethod
+    def __show_trajectory(image, center, point):
+        """
+        Draw arrows to depict ball's trajectory and components.
+
+        :param image: Frame to draw on
+        :param center: Centerpoint of ball
+        :param point: Point object
+        """
+        x_c, y_c = center[0], center[1]
+        v_x = (round(x_c+point.velocity.x), center[1])
+        v_y = (center[0], round(y_c-point.velocity.y))
+        direction = (round(x_c+point.velocity.x), round(y_c-point.velocity.y))
+        cv2.arrowedLine(image, center, direction, (10, 130, 250), 2, 8, 0, 0.1)
+        cv2.arrowedLine(image, center, v_x, (10, 255, 50), 2, 8, 0, 0.1)
+        cv2.arrowedLine(image, center, v_y, (10, 255, 50), 2, 8, 0, 0.1)
 
     @timer
     def track(self):
@@ -118,6 +136,7 @@ class BallTracker(object):
         start_time = time.time()
         radius = 0
         pos = {'x': 0, 'y': 0}
+        speed, angle = 0, 0
         baseline = perf_counter()
 
         while self.video.isOpened():
@@ -157,18 +176,34 @@ class BallTracker(object):
 
                 # Highlight ball shape and collect position data
                 try:
-                    if 10 < radius < 16 and x < 700:
+                    if 12 < radius < 17 and x < 700:
                         self.ball_detected = True
                         stamp = time.perf_counter()
                         center = (int(mts["m10"]/mts["m00"]), int(mts["m01"]/mts["m00"]))
                         pos['x'], pos['y'] = round(x), round(y)
+                        x_c, y_c = center[0], self.roi_dim.width[1] - center[1]
+                        interval = stamp - baseline
+
+                        if len(self.ball):
+                            prev = self.ball[-1]
+                            x_p, y_p = prev.x, prev.y
+                            t_c, t_p = interval, prev.time
+                            vx = round((x_c - x_p) / (t_c - t_p), 2)
+                            vy = round((y_c - y_p) / (t_c - t_p), 2)
+                        else:
+                            vx, vy = 0, 0
+
                         frame_data = Point(
-                            x=center[0],
-                            y=self.roi_dim.width[1]-center[1],
-                            time=stamp - baseline
+                            time=interval,
+                            x=x_c,
+                            y=y_c,
+                            velocity=Vector(x=vx, y=vy)
                         )
                         self.ball.append(frame_data)
                         self.radius_log.append(round(radius, 2))
+                        self.__show_trajectory(roi, center, frame_data)
+                        speed = self.__convert_units(frame_data.velocity.net(), 2)
+                        angle = round(frame_data.velocity.angle(), 1)
                         cv2.circle(roi, center, 15, (30, 200, 255), 3)
 
                     else:
@@ -190,7 +225,8 @@ class BallTracker(object):
                 f'Runtime: {time_interval(start_time)}',
                 f'Radius: {round(radius, 2)}',
                 f'Ball in frame: {"Yes" if self.ball_detected else "No"}',
-                f'Last position: ({pos["x"]},{pos["y"]})'
+                f'Speed: {speed} cm/s ({angle:.1f} deg)',
+                f'Last position: ({pos["x"]},{pos["y"]})',
             ]
             for i, label in enumerate(roi_text):
                 cv2.putText(roi, str(label), (10, 20 + (20 * i)),
@@ -206,7 +242,6 @@ class BallTracker(object):
 
         self.video.release()
         cv2.destroyAllWindows()
-        self.velocities = differentiate(self.ball)
         lg.info("Tracker session ended.")
 
         # Postprocessing functions for data analysis
@@ -228,17 +263,16 @@ class BallTracker(object):
             self.plot_data()
 
             # Tabulate point data
-            headers = ["TIME", "POSITION", "VELOCITY", "RESULTANT", "ANGLE"]
+            headers = ["TIME", "POSITION", "VELOCITY", "SPEED", "ANGLE"]
             data = []
-            for idx, point in enumerate(self.ball):
-                v = self.velocities[idx]
+            for point in self.ball:
                 t = round(point.time, 3)
-                v_x = self.__convert_units(v.x, 1)
-                v_y = self.__convert_units(v.y, 1)
+                v_x = self.__convert_units(point.velocity.x, 1)
+                v_y = self.__convert_units(point.velocity.y, 1)
                 p_x = self.__convert_units(point.x, 1)
                 p_y = self.__convert_units(point.y, 1)
-                res = self.__convert_units(v.resultant(), 2)
-                angle = round(v.angle(), 1)
+                res = self.__convert_units(point.velocity.net(), 2)
+                angle = round(point.velocity.angle(), 1)
                 data_row = [t, (p_x, p_y), (v_x, v_y), res, f'{angle:.1f}°']
                 data.append(data_row)
             print(tabulate(data, headers=headers, tablefmt="orgtbl"))
@@ -263,7 +297,7 @@ class BallTracker(object):
         # Generate plot
         plt.scatter(x_data, y_data, color="firebrick")
         # plt.plot(bestfit['line'], bestfit['polynomial'], color="gold")
-        plt.title("Ball point tracking")
+        plt.title("Ball tracking across board")
         plt.xlim(0, np.max(x_data)+10)
         plt.ylim(np.min(y_data)-10, np.max(y_data)+10)
         plt.xlabel("X-coordinate (cm)")
@@ -295,15 +329,14 @@ class BallTracker(object):
                     writer.writerow(header)
 
                     # Go through list of stored points, write to file
-                    for idx, point in enumerate(self.ball):
-                        v = velocities[idx]
+                    for point in self.ball:
                         data_input = [
                             str(point.time.strftime("%d-%b-%Y %I:%M:%S %p")),
                             str(self.__convert_units(point.x)),
                             str(self.__convert_units(point.y)),
-                            str(self.__convert_units(v.x, 2)),
-                            str(self.__convert_units(v.y, 2)),
-                            str(self.__convert_units(len(v)))
+                            str(self.__convert_units(point.velocity.x, 2)),
+                            str(self.__convert_units(point.velocity.y, 2)),
+                            str(self.__convert_units(point.velocity.net()))
                         ]
 
                         writer.writerow(data_input)

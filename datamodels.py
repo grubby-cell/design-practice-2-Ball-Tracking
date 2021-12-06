@@ -24,12 +24,12 @@ class Vector(BaseModel):
         return f'V({self.x:.2f}, {self.y:.2f})'
 
     def __len__(self):
-        return round(self.resultant())
+        return round(self.net())
 
-    def resultant(self):
+    def net(self) -> float:
         return math.sqrt(self.x**2 + self.y**2)
 
-    def angle(self):
+    def angle(self) -> float:
         return np.rad2deg(math.atan2(self.y, self.x))
 
 
@@ -54,15 +54,16 @@ class Point(BaseModel):
     Data class representing each recorded data point taken
     from the video capture. Stores coordinate and timestamp.
     """
+    time: float
     x: int
     y: int
-    time: float
+    velocity: Vector
 
     def __repr__(self):
         return f'<Point: x={self.x}, y={self.y}, time={self.time:.3f}>'
 
     def __str__(self):
-        return f'[P({self.x}, {self.y}) t={self.time:.3f}]'
+        return f'[P({self.x}, {self.y}) t={self.time:.3f} V=({self.velocity.x}, {self.velocity.y})]'
 
     def __len__(self):
         return math.sqrt(self.x**2 + self.y**2)
