@@ -31,8 +31,11 @@ def differentiate(data_set) -> List[Vector]:
     Takes the captured data set and calculates the velocity
     using numerical differentiation.
 
-    :param data_set: List of values from video capture
-    :return: diff_data: Velocities along X and Y axes
+    Args:
+        data_set (list): List of values from video capture
+
+    Returns:
+        diff_data: Velocities along X and Y axes
     """
     initial_velocity = Vector(x=0, y=0)
     diff_data = [initial_velocity]

@@ -16,13 +16,11 @@ import datetime as dt
 import traceback as tb
 from os import path
 from imutils import resize
-from time import perf_counter
 from tabulate import tabulate
 from matplotlib import pyplot as plt
 # Local files
 from timing import timer, time_interval
 from datamodels import Board, Point, Region, Vector
-from calculation import differentiate, polynomial_data
 
 
 # noinspection PyUnresolvedReferences
@@ -87,9 +85,12 @@ class BallTracker(object):
         """
         Converts pixel units to centimeters.
 
-        :param item: Value in pixels
-        :param precision: Decimal places for result
-        :return: unit length in centimeters
+        Args:
+            item: Value in pixels
+            precision (int): Decimal places for result
+
+        Returns:
+            unit length in centimeters
         """
         if precision:
             return round(self.cm_pixel_ratio * item, precision)
@@ -102,26 +103,37 @@ class BallTracker(object):
         for i in range(1, len(self.ball)):
             prev = self.ball[i-1]
             curr = self.ball[i]
-            dx = abs(prev.x - curr.x)
-            dy = abs(prev.y - curr.y)
-            if dx < 20 and dy < 20:
-                p_prev = (prev.x, self.roi_dim.width[1]-prev.y)
-                p_curr = (curr.x, self.roi_dim.width[1]-curr.y)
+            if abs(prev.x - curr.x) < 20 and abs(prev.y - curr.y) < 20:
+                p_prev = (prev.x, self.roi_dim.width[1] - prev.y)
+                p_curr = (curr.x, self.roi_dim.width[1] - curr.y)
                 cv2.line(frame, p_prev, p_curr, (10, 10, 255), 3)
+
+    @staticmethod
+    def __scale(value, factor: int = 1):
+        if factor <= 0:
+            if factor:
+                raise ValueError("Scaling factor must be a positive number.")
+            raise ZeroDivisionError("Scaling factor cannot be zero.")
+
+        else:
+            return round(value / factor)
 
     @staticmethod
     def __show_trajectory(image, center, point):
         """
         Draw arrows to depict ball's trajectory and components.
 
-        :param image: Frame to draw on
-        :param center: Centerpoint of ball
-        :param point: Point object
+        Args:
+            image (Frame): Image to draw on
+            center (tuple): Coordinates of the ball center
+            point (Point): Ball point data object
         """
         x_c, y_c = center[0], center[1]
-        v_x = (round(x_c+point.velocity.x), center[1])
-        v_y = (center[0], round(y_c-point.velocity.y))
+        v_x = (round(x_c+point.velocity.x), y_c)
+        v_y = (x_c, round(y_c-point.velocity.y))
         direction = (round(x_c+point.velocity.x), round(y_c-point.velocity.y))
+
+        # Draw arrows
         cv2.arrowedLine(image, center, direction, (10, 130, 250), 2, 8, 0, 0.1)
         cv2.arrowedLine(image, center, v_x, (10, 255, 50), 2, 8, 0, 0.1)
         cv2.arrowedLine(image, center, v_y, (10, 255, 50), 2, 8, 0, 0.1)
@@ -132,12 +144,12 @@ class BallTracker(object):
         Track ball and plot position markers on frame.
         """
         # Configure starting variables and preprocessing
-        print("Beginning tracking sequence.")
+        lg.info("Beginning tracking sequence.")
         start_time = time.time()
         radius = 0
         pos = {'x': 0, 'y': 0}
         speed, angle = 0, 0
-        baseline = perf_counter()
+        baseline = time.perf_counter()
 
         while self.video.isOpened():
             # Grab frame from video
@@ -166,7 +178,6 @@ class BallTracker(object):
             upper_hue = np.array([255, 255, 255])
             mask = cv2.inRange(hsv, lower_hue, upper_hue)
             (contours, _) = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            fg_mask = self.backsub.apply(mask)
 
             # When "ball" is detected
             if len(contours) > 0:
@@ -226,7 +237,7 @@ class BallTracker(object):
                 f'Radius: {round(radius, 2)}',
                 f'Ball in frame: {"Yes" if self.ball_detected else "No"}',
                 f'Speed: {speed} cm/s ({angle:.1f} deg)',
-                f'Last position: ({pos["x"]},{pos["y"]})',
+                f'Last position: ({pos["x"]}, {pos["y"]})',
             ]
             for i, label in enumerate(roi_text):
                 cv2.putText(roi, str(label), (10, 20 + (20 * i)),
@@ -237,7 +248,7 @@ class BallTracker(object):
             # Close windows with 'Esc' key
             key = cv2.waitKey(10)
             if key == 27:
-                print("Ending tracking session.")
+                lg.info("Ending tracking session.")
                 break
 
         self.video.release()
@@ -266,13 +277,13 @@ class BallTracker(object):
             headers = ["TIME", "POSITION", "VELOCITY", "SPEED", "ANGLE"]
             data = []
             for point in self.ball:
-                t = round(point.time, 3)
-                v_x = self.__convert_units(point.velocity.x, 1)
-                v_y = self.__convert_units(point.velocity.y, 1)
-                p_x = self.__convert_units(point.x, 1)
-                p_y = self.__convert_units(point.y, 1)
-                res = self.__convert_units(point.velocity.net(), 2)
-                angle = round(point.velocity.angle(), 1)
+                t = round(point.time, 5)
+                v_x = self.__convert_units(point.velocity.x, 2)
+                v_y = self.__convert_units(point.velocity.y, 2)
+                p_x = self.__convert_units(point.x, 2)
+                p_y = self.__convert_units(point.y, 2)
+                res = self.__convert_units(point.velocity.net(), 3)
+                angle = round(point.velocity.angle(), 3)
                 data_row = [t, (p_x, p_y), (v_x, v_y), res, f'{angle:.1f}°']
                 data.append(data_row)
             print(tabulate(data, headers=headers, tablefmt="orgtbl"))
@@ -289,22 +300,17 @@ class BallTracker(object):
         y_raw = [self.__convert_units(p.y, 2) for p in self.ball]
         x_data = np.array(x_raw, dtype=float)
         y_data = np.array(y_raw, dtype=float)
-        # bestfit = polynomial_data(x_raw, y_raw, 3)
         print("-" * 25)
-        # print(f"y(x) = {bestfit['equation']}")
-        # print(f"Polynomial R-squared: {bestfit['relation']}")
 
         # Generate plot
         plt.scatter(x_data, y_data, color="firebrick")
-        # plt.plot(bestfit['line'], bestfit['polynomial'], color="gold")
         plt.title("Ball tracking across board")
-        plt.xlim(0, np.max(x_data)+10)
-        plt.ylim(np.min(y_data)-10, np.max(y_data)+10)
+        plt.xlim(0, np.max(x_data)+5)
+        plt.ylim(np.min(y_data)-5, np.max(y_data)+5)
         plt.xlabel("X-coordinate (cm)")
         plt.ylabel("Y-coordinate (cm)")
         plt.grid()
         plt.show()
-        lg.info("For more accurate fitting, use MATLAB.")
 
     def export_data(self):
         """
@@ -317,29 +323,21 @@ class BallTracker(object):
             if not path.exists(csv_file):
                 with open(csv_file, 'w', encoding='UTF8') as file:
                     # Establish CSV headers
-                    header = [
-                        "Time",
-                        "X-Position",
-                        "Y-Position",
-                        "X-Velocity",
-                        "Y-Velocity",
-                        "Resultant Velocity"
-                    ]
+                    header = ["TIME", "POSITION", "VELOCITY", "SPEED", "ANGLE"]
                     writer = csv.writer(file)
                     writer.writerow(header)
 
                     # Go through list of stored points, write to file
                     for point in self.ball:
-                        data_input = [
-                            str(point.time.strftime("%d-%b-%Y %I:%M:%S %p")),
-                            str(self.__convert_units(point.x)),
-                            str(self.__convert_units(point.y)),
-                            str(self.__convert_units(point.velocity.x, 2)),
-                            str(self.__convert_units(point.velocity.y, 2)),
-                            str(self.__convert_units(point.velocity.net()))
-                        ]
-
-                        writer.writerow(data_input)
+                        t = round(point.time, 3)
+                        v_x = self.__convert_units(point.velocity.x, 1)
+                        v_y = self.__convert_units(point.velocity.y, 1)
+                        p_x = self.__convert_units(point.x, 1)
+                        p_y = self.__convert_units(point.y, 1)
+                        res = self.__convert_units(point.velocity.net(), 2)
+                        angle = round(point.velocity.angle(), 1)
+                        data_row = [t, (p_x, p_y), (v_x, v_y), res, angle]
+                        writer.writerow(list(map(lambda x: str(x), data_row)))
 
                 print("Data compiled and exported to CSV file.")
 

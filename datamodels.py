@@ -60,7 +60,14 @@ class Point(BaseModel):
     velocity: Vector
 
     def __repr__(self):
-        return f'<Point: x={self.x}, y={self.y}, time={self.time:.3f}>'
+        properties = [
+            f'time={self.time:.3f}',
+            f'x={self.x}',
+            f'y={self.y}',
+            f'x-velocity={self.velocity.x}',
+            f'y-velocity={self.velocity.y}'
+        ]
+        return f'<Point: {", ".join(properties)}>'
 
     def __str__(self):
         return f'[P({self.x}, {self.y}) t={self.time:.3f} V=({self.velocity.x}, {self.velocity.y})]'
