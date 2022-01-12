@@ -53,6 +53,8 @@ class BallTracker(object):
         self.frame_dim = None
         self.roi_dim = None
         self.cm_pixel_ratio = 1
+        self.x_adj_factor = 4 if self.simulation else 0
+        self.y_adj_factor = 0.9 if self.simulation else 1
         self.backsub = cv2.createBackgroundSubtractorKNN()
 
         # Configure logging
@@ -174,9 +176,9 @@ class BallTracker(object):
             self.cm_pixel_ratio = (w_r + h_r) / 2
 
             if self.simulation:
-                self.roi_dim = Region(length=(200, length-200), width=(70, width-70))
+                self.roi_dim = Region(length=(100, length), width=(0, width))
             else:
-                self.roi_dim = Region(length=(350, length-400), width=(70, width-50))
+                self.roi_dim = Region(length=(400, length-450), width=(200, width-75))
 
             self.frame_dim = Region(length=(0, length), width=(0, width))
             roi = frame[
@@ -204,7 +206,6 @@ class BallTracker(object):
 
                 # Highlight ball shape and collect position data
                 try:
-                    print(radius)
                     if self.radius_bounds[0] < radius < self.radius_bounds[1] and x < 700:
                         self.ball_detected = True
                         stamp = time.perf_counter()
@@ -253,6 +254,7 @@ class BallTracker(object):
             pos_y_cm = self.__convert_units(pos["y"])
             roi_text = [
                 time_stamp,
+                f'Frame size: {width} x {length}',
                 f'Runtime: {time_interval(start_time)}',
                 f'Radius: {round(radius, 2)}',
                 f'Ball in frame: {"Yes" if self.ball_detected else "No"}',
@@ -317,15 +319,16 @@ class BallTracker(object):
         Plot 2D data acquired from tracking session.
         """
         # Separate coordinates data into X and Y parameters
-        x_raw = [self.__convert_units(p.x, 2) for p in self.ball]
-        y_raw = [self.__convert_units(p.y, 2) for p in self.ball]
+        x_raw = [(self.__convert_units(p.x, 2)-self.x_adj_factor)/self.y_adj_factor for p in self.ball]
+        y_raw = [self.__convert_units(p.y*self.y_adj_factor, 2) for p in self.ball]
         x_data = np.array(x_raw, dtype=float)
         y_data = np.array(y_raw, dtype=float)
         print("-" * 25)
 
         # Generate plot
+        plot_title = f'Ball tracking {"of simulation" if self.simulation else "across board"}'
         plt.scatter(x_data, y_data, color="firebrick")
-        plt.title("Ball tracking across board")
+        plt.title(plot_title)
         plt.xlim(0, np.max(x_data)+5)
         plt.ylim(np.min(y_data)-5, np.max(y_data)+5)
         plt.xlabel("X-coordinate (cm)")
