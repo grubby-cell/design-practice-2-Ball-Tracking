@@ -25,7 +25,7 @@ from datamodels import Board, Point, Region, Vector
 
 # noinspection PyUnresolvedReferences
 class BallTracker(object):
-    def __init__(self, file_name: str):
+    def __init__(self, file_name: str, simulation: bool = False):
         """
         Camera object initialization.
         """
@@ -38,8 +38,15 @@ class BallTracker(object):
 
         # Video properties
         self.font = cv2.FONT_HERSHEY_SIMPLEX
-        self.lower = np.array([52, 35, 0])
-        self.upper = np.array([255, 255, 255])
+        self.simulation = simulation
+        if simulation:
+            self.lower = np.array([35, 110, 50])
+            self.upper = np.array([70, 255, 110])
+            self.radius_bounds = (10, 20)
+        else:
+            self.lower = np.array([52, 35, 0])
+            self.upper = np.array([255, 255, 255])
+            self.radius_bounds = (12, 25)
         self.ball = []
         self.radius_log = []
         self.ball_detected = False
@@ -92,8 +99,12 @@ class BallTracker(object):
         Returns:
             unit length in centimeters
         """
+        if precision < 0:
+            raise ValueError("Precision must be non-negative.")
+
         if precision:
             return round(self.cm_pixel_ratio * item, precision)
+
         return round(self.cm_pixel_ratio * item)
 
     def __trace_path(self, frame):
@@ -161,7 +172,12 @@ class BallTracker(object):
             width, length, _ = frame.shape
             w_r, h_r = self.board.WIDTH / width, self.board.HEIGHT / length
             self.cm_pixel_ratio = (w_r + h_r) / 2
-            self.roi_dim = Region(length=(350, length-300), width=(70, width-50))
+
+            if self.simulation:
+                self.roi_dim = Region(length=(200, length-200), width=(70, width-70))
+            else:
+                self.roi_dim = Region(length=(350, length-400), width=(70, width-50))
+
             self.frame_dim = Region(length=(0, length), width=(0, width))
             roi = frame[
                   self.roi_dim.width[0]:self.roi_dim.width[1],
@@ -169,6 +185,7 @@ class BallTracker(object):
             ]
             frame = resize(frame, height=540)
             roi = resize(roi, height=540)
+
             r_height, r_width, _ = roi.shape
             self.board.r_width, self.board.r_length = r_height, r_width
 
@@ -187,7 +204,8 @@ class BallTracker(object):
 
                 # Highlight ball shape and collect position data
                 try:
-                    if 12 < radius < 17 and x < 700:
+                    print(radius)
+                    if self.radius_bounds[0] < radius < self.radius_bounds[1] and x < 700:
                         self.ball_detected = True
                         stamp = time.perf_counter()
                         center = (int(mts["m10"]/mts["m00"]), int(mts["m01"]/mts["m00"]))
@@ -231,13 +249,15 @@ class BallTracker(object):
             # Put window text and frame details
             cv2.putText(frame, "Video feed", (10, 30), self.font, 0.7, (10, 255, 100), 2)
             time_stamp = dt.datetime.now().strftime("%I:%M:%S %p")
+            pos_x_cm = self.__convert_units(pos["x"])
+            pos_y_cm = self.__convert_units(pos["y"])
             roi_text = [
                 time_stamp,
                 f'Runtime: {time_interval(start_time)}',
                 f'Radius: {round(radius, 2)}',
                 f'Ball in frame: {"Yes" if self.ball_detected else "No"}',
                 f'Speed: {speed} cm/s ({angle:.1f} deg)',
-                f'Last position: ({pos["x"]}, {pos["y"]})',
+                f'Last position: ({pos_x_cm}, {pos_y_cm})',
             ]
             for i, label in enumerate(roi_text):
                 cv2.putText(roi, str(label), (10, 20 + (20 * i)),
@@ -272,12 +292,13 @@ class BallTracker(object):
             print(f'ROI area: W = {self.roi_dim.width}, L = {self.roi_dim.length}')
             print("*" * 22)
             self.plot_data()
+            lg.info("Presenting recorded data.")
 
             # Tabulate point data
             headers = ["TIME", "POSITION", "VELOCITY", "SPEED", "ANGLE"]
             data = []
             for point in self.ball:
-                t = round(point.time, 5)
+                t = round(point.time, 3)
                 v_x = self.__convert_units(point.velocity.x, 2)
                 v_y = self.__convert_units(point.velocity.y, 2)
                 p_x = self.__convert_units(point.x, 2)
@@ -311,6 +332,7 @@ class BallTracker(object):
         plt.ylabel("Y-coordinate (cm)")
         plt.grid()
         plt.show()
+        lg.info("Showing data plot.")
 
     def export_data(self):
         """
