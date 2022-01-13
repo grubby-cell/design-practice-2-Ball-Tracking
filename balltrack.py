@@ -57,7 +57,9 @@ class BallTracker(object):
 
         # Video scaling properties
         self.x_adj_factor = 6 if self.simulation else 0
-        self.y_adj_factor = 37 if self.simulation else 34
+        self.y_adj_factor = 38 if self.simulation else 34
+        self.x_axis_factor = 2 if self.simulation else 1.8
+        self.y_axis_factor = 1.9 if self.simulation else 2
 
         # Configure logging
         log_fmt = "[%(levelname)s] %(asctime)s | %(message)s"
@@ -125,6 +127,9 @@ class BallTracker(object):
 
     @staticmethod
     def __scale(value, factor: int = 1):
+        """
+        Scales the value according to a given integer factor
+        """
         if factor <= 0:
             if factor:
                 raise ValueError("Scaling factor must be a positive number.")
@@ -143,6 +148,7 @@ class BallTracker(object):
             center (tuple): Coordinates of the ball center
             point (Point): Ball point data object
         """
+        # Set coordinate points and establish vector direction
         x_c, y_c = center[0], center[1]
         v_x = (round(x_c+point.velocity.x), y_c)
         v_y = (x_c, round(y_c-point.velocity.y))
@@ -152,6 +158,20 @@ class BallTracker(object):
         cv2.arrowedLine(image, center, direction, (10, 130, 250), 2, 8, 0, 0.1)
         cv2.arrowedLine(image, center, v_x, (10, 255, 50), 2, 8, 0, 0.1)
         cv2.arrowedLine(image, center, v_y, (10, 255, 50), 2, 8, 0, 0.1)
+
+    def __scale_data(self, data, axis: str):
+        """
+        Scales data set to compensate for video differences.
+        """
+        resize_factor = 0.9 if self.simulation else 1
+        if axis.upper() == "X":
+            out = [self.x_axis_factor * (self.__convert_units(p.x, 2) - self.x_adj_factor) / resize_factor for p in data]
+        elif axis.upper() == "Y":
+            out = [self.y_axis_factor * (self.__convert_units(p.y, 2) - self.y_adj_factor) for p in data]
+        else:
+            raise Exception(f'Invalid axis: {axis} was given but \"X\" or \"Y\" was expected.')
+
+        return out
 
     @timer
     def track(self):
@@ -170,13 +190,14 @@ class BallTracker(object):
             # Grab frame from video
             ret, frame = self.video.read()
             if not ret:
-                break
+                break  # End loop if out of frames
 
             # Setting up frame and region-of-interest
             width, length, _ = frame.shape
             w_r, h_r = self.board.WIDTH / width, self.board.HEIGHT / length
             self.cm_pixel_ratio = (w_r + h_r) / 2
 
+            # Crop video
             if self.simulation:
                 self.roi_dim = Region(length=(100, length), width=(0, width))
             else:
@@ -225,6 +246,7 @@ class BallTracker(object):
                         else:
                             vx, vy = 0, 0
 
+                        # Store data and highlight ball
                         frame_data = Point(
                             time=interval,
                             x=x_c,
@@ -321,21 +343,20 @@ class BallTracker(object):
         Plot 2D data acquired from tracking session.
         """
         # Separate coordinates data into X and Y parameters
-        print(len(self.ball))
-        resize_factor = 0.9 if self.simulation else 1
         adj_set = self.ball[30:] if self.simulation else self.ball
-        x_raw = [(self.__convert_units(p.x, 2)-self.x_adj_factor)/resize_factor for p in adj_set]
-        y_raw = [self.__convert_units(p.y, 2)-self.y_adj_factor for p in adj_set]
+        x_raw = self.__scale_data(adj_set, axis="x")
+        y_raw = self.__scale_data(adj_set, axis="y")
         x_data = np.array(x_raw, dtype=float)
         y_data = np.array(y_raw, dtype=float)
         print("-" * 25)
 
         # Generate plot
         plot_title = f'Ball tracking {"of simulation" if self.simulation else "across board"}'
-        plt.scatter(x_data, y_data, color="firebrick")
+        plot_color = "darkgreen" if self.simulation else "firebrick"
+        plt.scatter(x_data, y_data, color=plot_color)
         plt.title(plot_title)
-        plt.xlim(0, np.max(x_data)+3)
-        plt.ylim(0, np.max(y_data)+3)
+        plt.xlim(0, self.board.WIDTH)
+        plt.ylim(0, self.board.HEIGHT)
         plt.xlabel("X-coordinate (cm)")
         plt.ylabel("Y-coordinate (cm)")
         plt.grid()

@@ -1,3 +1,9 @@
+"""
+DATAMODELS.PY
+
+Applied OOP concepts to better store and track data.
+Uses Pydantic library for dataclasses and validation.
+"""
 import math
 import numpy as np
 from pydantic import BaseModel, validator
@@ -14,6 +20,11 @@ class Board(object):
 
 
 class Vector(BaseModel):
+    """
+    Vector object; used to create a data-type for velocity and
+    its components. Has X and Y component, as well as resultant
+    as object properties.
+    """
     x: float
     y: float
 
