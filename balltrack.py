@@ -36,8 +36,9 @@ class BallTracker(object):
         self.board = Board()
         self.output = None
 
-        # Video properties
+        # Video general properties
         self.font = cv2.FONT_HERSHEY_SIMPLEX
+        self.backsub = cv2.createBackgroundSubtractorKNN()
         self.simulation = simulation
         if simulation:
             self.lower = np.array([35, 110, 50])
@@ -53,9 +54,10 @@ class BallTracker(object):
         self.frame_dim = None
         self.roi_dim = None
         self.cm_pixel_ratio = 1
-        self.x_adj_factor = 4 if self.simulation else 0
-        self.y_adj_factor = 0.9 if self.simulation else 1
-        self.backsub = cv2.createBackgroundSubtractorKNN()
+
+        # Video scaling properties
+        self.x_adj_factor = 6 if self.simulation else 0
+        self.y_adj_factor = 37 if self.simulation else 34
 
         # Configure logging
         log_fmt = "[%(levelname)s] %(asctime)s | %(message)s"
@@ -319,8 +321,11 @@ class BallTracker(object):
         Plot 2D data acquired from tracking session.
         """
         # Separate coordinates data into X and Y parameters
-        x_raw = [(self.__convert_units(p.x, 2)-self.x_adj_factor)/self.y_adj_factor for p in self.ball]
-        y_raw = [self.__convert_units(p.y*self.y_adj_factor, 2) for p in self.ball]
+        print(len(self.ball))
+        resize_factor = 0.9 if self.simulation else 1
+        adj_set = self.ball[30:] if self.simulation else self.ball
+        x_raw = [(self.__convert_units(p.x, 2)-self.x_adj_factor)/resize_factor for p in adj_set]
+        y_raw = [self.__convert_units(p.y, 2)-self.y_adj_factor for p in adj_set]
         x_data = np.array(x_raw, dtype=float)
         y_data = np.array(y_raw, dtype=float)
         print("-" * 25)
@@ -329,8 +334,8 @@ class BallTracker(object):
         plot_title = f'Ball tracking {"of simulation" if self.simulation else "across board"}'
         plt.scatter(x_data, y_data, color="firebrick")
         plt.title(plot_title)
-        plt.xlim(0, np.max(x_data)+5)
-        plt.ylim(np.min(y_data)-5, np.max(y_data)+5)
+        plt.xlim(0, np.max(x_data)+3)
+        plt.ylim(0, np.max(y_data)+3)
         plt.xlabel("X-coordinate (cm)")
         plt.ylabel("Y-coordinate (cm)")
         plt.grid()
