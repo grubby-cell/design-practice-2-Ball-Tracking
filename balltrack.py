@@ -379,12 +379,14 @@ class BallTracker(object):
                     writer.writerow(header)
 
                     # Go through list of stored points, write to file
+                    self.ball = self.ball[30:] if self.simulation else self.ball
+                    resize_factor = 0.9 if self.simulation else 1
                     for point in self.ball:
                         t = round(point.time, 3)
                         v_x = self.__convert_units(point.velocity.x, 1)
                         v_y = self.__convert_units(point.velocity.y, 1)
-                        p_x = self.__convert_units(point.x, 1)
-                        p_y = self.__convert_units(point.y, 1)
+                        p_x = self.x_axis_factor * (self.__convert_units(point.x, 2) - self.x_adj_factor) / resize_factor
+                        p_y = self.y_axis_factor * (self.__convert_units(point.y, 2) - self.y_adj_factor)
                         res = self.__convert_units(point.velocity.net(), 2)
                         angle = round(point.velocity.angle(), 1)
                         data_row = [t, (p_x, p_y), (v_x, v_y), res, angle]
@@ -397,3 +399,4 @@ class BallTracker(object):
 
         except Exception as e:
             lg.error(f'Error during data export: {e}')
+
