@@ -21,5 +21,5 @@ Ball tracking program for DP2 class. Used to trace ball across board using webca
 git clone https://github.com/jgfranco17/design-practice-2
 ```
 
-**Execute main script**
+**Execute main script**  
 Run the `main.py` file. Sample videos are already included in the repository. To change the object tracking, edit the parameters in the `balltrack.py` file.
